@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoveHaengers</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+  // ── DEINE SUPABASE ZUGANGSDATEN ──────────────────────────────────────────
+  const SUPABASE_URL = 'DEINE_PROJECT_URL_HIER'   // z.B. https://abcdef.supabase.co
+  const SUPABASE_KEY = 'DEIN_ANON_KEY_HIER'       // langer eyJ... String
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+  // Save to Supabase
+  window.fbSave = async (state) => {
+    try {
+      await supabase
+        .from('app_state')
+        .upsert({ id: 'shared', state: JSON.stringify(state) })
+    } catch(e) { console.error("Supabase save error:", e) }
+  }
+
+  // Listen for real-time changes
+  supabase
+    .channel('app_state_changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_state' }, (payload) => {
+      try {
+        const incoming = JSON.parse(payload.new.state)
+        Object.assign(window.S, incoming)
+        const pages = ['home','picker','tierlist','challenges','vote','nightplanner','points']
+        const active = pages.find(p => document.getElementById('page-'+p)?.classList.contains('active'))
+        if (active === 'picker') window.gpRender?.()
+        if (active === 'tierlist') window.tlRender?.()
+        if (active === 'challenges') window.chRender?.()
+        if (active === 'vote') window.voteRender?.()
+        if (active === 'nightplanner') window.nightRender?.()
+        if (active === 'points') window.ptsRender?.()
+      } catch(e) { console.error("Supabase realtime error:", e) }
+    })
+    .subscribe()
+
+  // Initial load from Supabase on page start
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const { data } = await supabase
+        .from('app_state')
+        .select('state')
+        .eq('id', 'shared')
+        .single()
+      if (data?.state) {
+        Object.assign(window.S, JSON.parse(data.state))
+        const pages = ['home','picker','tierlist','challenges','vote','nightplanner','points']
+        const active = pages.find(p => document.getElementById('page-'+p)?.classList.contains('active'))
+        if (active === 'picker') window.gpRender?.()
+        if (active === 'tierlist') window.tlRender?.()
+        if (active === 'nightplanner') window.nightRender?.()
+        if (active === 'points') window.ptsRender?.()
+      }
+    } catch(e) { console.error("Supabase load error:", e) }
+  })
+</script>
+<style>
+:root {
+  --bg: #090b10;
+  --bg2: #0e1117;
+  --bg3: #141820;
+  --bg4: #1a2030;
+  --border: #1e2533;
+  --accent: #00f5a0;
+  --accent2: #00d4ff;
+  --danger: #ff4466;
+  --warn: #ffaa00;
+  --purple: #aa66ff;
+  --text: #e0e8f0;
+  --muted: #4a5568;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  min-height: 100vh;
+}
+
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(0,245,160,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,245,160,0.02) 1px, transparent 1px);
+  background-size:40px 40px;
+  pointer-events:none;
+  z-index:0;
+}
+
+/* ── NAV ── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(9,11,16,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  height: 56px;
+  gap: 0.3rem;
+}
+
+.nav-logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-right: 1rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.nav-btn:hover { color: var(--text); background: var(--bg3); }
+.nav-btn.active { color: var(--accent); background: rgba(0,245,160,0.08); }
+
+/* ── BURGER BUTTON ── */
+.burger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 8px;
+  transition: border-color 0.2s;
+  flex-shrink: 0;
+}
+.burger:hover { border-color: var(--accent); }
+.burger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+.burger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.burger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.burger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ── MOBILE MENU DRAWER ── */
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ── MOBILE RESPONSIVE ── */
+@media (max-width: 768px) {
+  .burger { display: flex; }
+
+  .nav-links {
+    display: none;
+    position: fixed;
+    top: 56px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(9,11,16,0.97);
+    backdrop-filter: blur(16px);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem;
+    gap: 0.3rem;
+    z-index: 49;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-links.open {
+    display: flex;
+  }
+
+  .nav-btn {
+    padding: 0.9rem 1.2rem;
+    font-size: 1rem;
+    text-align: left;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .nav-btn.active {
+    border-color: var(--accent);
+  }
+
+  /* Make pages full-width on mobile */
+  .page { padding: 1rem 0.75rem; }
+
+  /* Stack all grids vertically */
+  [style*="grid-template-columns:1fr 280px"],
+  [style*="grid-template-columns:1fr 300px"],
+  [style*="grid-template-columns:1fr 260px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Home logo smaller */
+  .home-logo { font-size: 2.5rem; }
+  .home-hero { padding: 2rem 0.5rem 1.5rem; }
+
+  /* Points grid 2-col on mobile */
+  .points-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Tier list bar wraps nicely */
+  #page-tierlist .card { flex-wrap: wrap; }
+}
+
+/* ── PAGES ── */
+.page { display: none; padding: 1.5rem; position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* ── SHARED COMPONENTS ── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:2px;
+  background:linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+
+.card-title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--accent);
+  letter-spacing: 0.2em;
+  margin-bottom: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.btn {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn:hover { border-color: var(--muted); }
+.btn.primary { border-color: var(--accent); color: var(--accent); }
+.btn.primary:hover { background: var(--accent); color: #000; }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: #fff; }
+.btn.warn { border-color: var(--warn); color: var(--warn); }
+.btn.warn:hover { background: var(--warn); color: #000; }
+.btn.purple { border-color: var(--purple); color: var(--purple); }
+.btn.purple:hover { background: var(--purple); color: #fff; }
+.btn.accent2 { border-color: var(--accent2); color: var(--accent2); }
+.btn.accent2:hover { background: var(--accent2); color: #000; }
+
+input, select, textarea {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.8rem;
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+select option { background: var(--bg2); }
+
+.form-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.form-group label { font-family: 'Share Tech Mono', monospace; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.1em; }
+
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem; }
+
+.empty-state { text-align: center; color: var(--muted); font-family: 'Share Tech Mono', monospace; font-size: 0.82rem; padding: 2.5rem; }
+
+.mono { font-family: 'Share Tech Mono', monospace; }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.78);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 400px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--accent); letter-spacing: 0.1em; }
+.modal-actions { display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end; }
+
+/* ══════════════════════════════════════
+   HOME PAGE
+══════════════════════════════════════ */
+.home-hero {
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+}
+
+.home-logo {
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+}
+
+.home-sub {
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.3em;
+  margin-top: 0.5rem;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.tool-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem 1.2rem;
+  cursor: pointer;
+  transition: all 0.25s;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.tool-card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:3px;
+  opacity:0;
+  transition: opacity 0.25s;
+}
+
+.tool-card:hover { transform: translateY(-4px); }
+.tool-card:hover::before { opacity: 1; }
+.tool-card:hover { border-color: #2e3a50; }
+
+.tool-card.c-green::before { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+.tool-card.c-blue::before  { background: linear-gradient(90deg, transparent, var(--accent2), transparent); }
+.tool-card.c-red::before   { background: linear-gradient(90deg, transparent, var(--danger), transparent); }
+.tool-card.c-warn::before  { background: linear-gradient(90deg, transparent, var(--warn), transparent); }
+.tool-card.c-purple::before{ background: linear-gradient(90deg, transparent, var(--purple), transparent); }
+
+.tool-icon { font-size: 2.5rem; margin-bottom: 0.7rem; }
+.tool-name { font-size: 1.1rem; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 0.3rem; }
+.tool-desc { font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--muted); line-height: 1.5; }
+
+/* ══════════════════════════════════════
+   GAME PICKER + TIERLIST
+══════════════════════════════════════ */
+/* SPINNER */
+.spinner-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 1.2rem;
+}
+.spinner-box::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--accent), transparent); }
+.spin-result { font-size: 2.2rem; font-weight: 700; min-height: 3rem; display: flex; align-items: center; justify-content: center; }
+.spin-cat { font-family: 'Share Tech Mono', monospace; font-size: 0.72rem; color: var(--accent2); letter-spacing: 0.2em; min-height: 1rem; margin-bottom: 0.4rem; }
+.pick-btn {
+  margin-top: 1.2rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; border-radius: 8px;
+  padding: 0.85rem 3rem;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.2rem; font-weight: 700;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: #000; cursor: pointer;
+  transition: all 0.2s;
+}
+.pick-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,245,160,0.3); }
+.pick-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+@keyframes glitch {
+  0%{transform:translate(0)} 20%{transform:translate(-2px,1px)} 40%{transform:translate(2px,-1px)} 60%{transform:translate(-1px,2px)} 80%{transform:translate(1px,-2px)} 100%{transform:translate(0)}
+}
+@keyframes reveal {
+  0%{opacity:0;transform:scale(0.8) translateY(10px)} 60%{transform:scale(1.05) translateY(-2px)} 100%{opacity:1;transform:scale(1) translateY(0)}
+}
+.spin-result.spinning { animation: glitch 0.1s infinite; }
+.spin-result.revealed { animation: reveal 0.5s ease forwards; }
+
+.filter-bar { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
+.filter-chip {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 0.3rem 0.9rem;
+  font-family: 'Rajdhani', sans-serif; font-size: 0.82rem; font-weight: 600;
+  color: var(--muted); cursor: pointer; transition: all 0.2s;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.filter-chip.active { border-color: var(--accent2); color: var(--accent2); background: rgba(0,212,255,0.08); }
+
+.stats-bar { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.stat-pill { font-family: 'Share Tech Mono', monospace; font-size: 0.78rem; color: var(--muted); }
+.stat-pill span { color: var(--accent); font-weight: bold; }
+
+/* GAME LIST */
+.game-list { display: flex; flex-direction: column; gap: 0.45rem; max-height: 350px; overflow-y: auto; margin-bottom: 0.8rem; padding-right: 0.2rem; }
+.game-list::-webkit-scrollbar { width: 3px; }
+.game-list::-webkit-scrollbar-track { background: var(--bg); }
+.game-list::-webkit-scrollbar-thumb { background: var(--border); border-radius:2px; }
+
+.game-item { display: flex; align-items: center; gap: 0.7rem; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.9rem; transition: all 0.15s; }
+.game-item:hover { border-color: var(--muted); }
+.game-item.excluded { opacity: 0.4; }
+.game-item.excluded .gi-name { text-decoration: line-through; }
+.gi-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.gi-name { flex: 1; font-weight: 600; }
+.gi-cat { font-family: 'Share Tech Mono', monospace; font-size: 0.68rem; color: var(--muted); background: var(--bg); padding: 0.18rem 0.5rem; border-radius: 4px; }
+.gi-actions { display: flex; gap: 0.3rem; }
+.icon-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: 0.25rem 0.4rem; cursor: pointer; font-size: 0.8rem; color: var(--muted); transition: all 0.15s; line-height: 1; }
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.icon-btn.del:hover { border-color: var(--danger); color: var(--danger); }
+.icon-btn.excl-on { border-color: var(--warn); color: var(--warn); }
+
+.add-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.add-row input { flex: 1; min-width: 140px; }
+
+/* ── TIERLIST ── */
+.tier-row { display: flex; align-items: stretch; margin-bottom: 0.4rem; border-radius: 8px; overflow: hidden; min-height: 70px; border: 1px solid var(--border); }
+.tier-label { width: 58px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; cursor: pointer; position: relative; }
+.tier-label:hover::after { content:'✏️'; position:absolute; font-size:0.65rem; bottom:3px; right:3px; }
+.tier-items { flex:1; display:flex; flex-wrap:wrap; align-items:center; gap:0.35rem; padding:0.45rem; background:var(--bg3); min-height:70px; transition:background 0.15s; }
+.tier-items.drag-over { background:rgba(0,245,160,0.06); outline:2px dashed rgba(0,245,160,0.3); outline-offset:-2px; }
+.tier-actions { display:flex; flex-direction:column; justify-content:center; gap:0.25rem; padding:0.35rem; background:var(--bg3); border-left:1px solid var(--border); }
+.t-mini-btn { background:none; border:1px solid var(--border); border-radius:4px; padding:0.18rem 0.35rem; color:var(--muted); cursor:pointer; font-size:0.72rem; line-height:1; transition:all 0.15s; }
+.t-mini-btn:hover { border-color:var(--accent); color:var(--accent); }
+.t-mini-btn.del:hover { border-color:var(--danger); color:var(--danger); }
+
+.item-card { width:68px; height:68px; border-radius:6px; overflow:hidden; cursor:grab; position:relative; border:2px solid transparent; transition:all 0.15s; flex-shrink:0; background:var(--bg4); display:flex; align-items:center; justify-content:center; }
+.item-card:hover { border-color:var(--accent); transform:scale(1.06); z-index:10; }
+.item-card:active { cursor:grabbing; }
+.item-card.dragging { opacity:0.3; }
+.item-card img { width:100%; height:100%; object-fit:cover; }
+.item-card .ic-text { font-size:0.68rem; font-weight:700; text-align:center; padding:0.3rem; line-height:1.2; word-break:break-word; }
+.item-card .ic-del { position:absolute; top:2px; right:2px; background:rgba(255,68,102,0.85); border:none; border-radius:3px; width:15px; height:15px; font-size:0.58rem; color:#fff; cursor:pointer; display:none; align-items:center; justify-content:center; }
+.item-card:hover .ic-del { display:flex; }
+
+.pool-zone { margin-top:0.8rem; border-top:1px solid var(--border); padding-top:0.8rem; }
+.pool-lbl { font-family:'Share Tech Mono',monospace; font-size:0.68rem; color:var(--muted); letter-spacing:0.2em; margin-bottom:0.4rem; }
+.pool-items { display:flex; flex-wrap:wrap; gap:0.35rem; min-height:78px; padding:0.45rem; border:1px dashed var(--border); border-radius:8px; transition:background 0.15s; }
+.pool-items.drag-over { background:rgba(0,212,255,0.05); border-color:var(--accent2); }
+
+/* ── TIER MODAL ── */
+#tierModal .modal { width: 340px; }
+
+/* ══════════════════════════════════════
+   CHALLENGES
+══════════════════════════════════════ */
+.challenge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.8rem; margin-bottom: 1rem; }
+.challenge-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; position: relative; transition: all 0.2s; }
+.challenge-card.done { opacity: 0.5; }
+.challenge-card.done .ch-title { text-decoration: line-through; }
+.ch-badge { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; padding: 0.18rem 0.5rem; border-radius: 20px; display: inline-block; margin-bottom: 0.5rem; }
+.ch-badge.daily { background: rgba(0,245,160,0.12); color: var(--accent); border: 1px solid rgba(0,245,160,0.3); }
+.ch-badge.weekly { background: rgba(0,212,255,0.12); color: var(--accent2); border: 1px solid rgba(0,212,255,0.3); }
+.ch-title { font-size: 0.98rem; font-weight: 700; margin-bottom: 0.3rem; }
+.ch-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+.ch-actions { display: flex; gap: 0.4rem; margin-top: 0.7rem; }
+.ch-done-btn { background: none; border: 1px solid var(--accent); border-radius: 6px; padding: 0.3rem 0.7rem; color: var(--accent); font-family: 'Rajdhani', sans-serif; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; text-transform: uppercase; }
+.ch-done-btn:hover { background: var(--accent); color: #000; }
+.challenge-card.done .ch-done-btn { border-color: var(--muted); color: var(--muted); }
+.challenge-card.done .ch-done-btn:hover { background: var(--muted); color: #000; }
+
+/* ══════════════════════════════════════
+   ABSTIMMUNG
+══════════════════════════════════════ */
+.vote-option { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 0.5rem; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
+.vote-option:hover { border-color: var(--muted); }
+.vote-option.voted { border-color: var(--accent); }
+.vote-bar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(0,245,160,0.07); transition: width 0.4s ease; z-index: 0; }
+.vote-content { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; }
+.vote-label { font-weight: 700; font-size: 1rem; }
+.vote-count { font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; color: var(--accent); }
+
+/* ══════════════════════════════════════
+   GAME NIGHT PLANNER
+══════════════════════════════════════ */
+.night-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 0.6rem; }
+.night-date { font-family: 'Share Tech Mono', monospace; font-size: 0.72rem; color: var(--accent2); letter-spacing: 0.15em; margin-bottom: 0.3rem; }
+.night-game { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+.night-players { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+.night-player-tag { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 0.2rem 0.7rem; font-size: 0.82rem; font-weight: 600; }
+
+/* ══════════════════════════════════════
+   PUNKTE SYSTEM
+══════════════════════════════════════ */
+.points-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; margin-bottom: 1rem; }
+.points-card { background: var(--bg3); border: 2px solid var(--border); border-radius: 12px; padding: 1rem; text-align: center; transition: all 0.2s; }
+.points-card:hover { border-color: var(--muted); }
+.points-avatar { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700; }
+.points-name { font-size: 1rem; font-weight: 700; margin-bottom: 0.2rem; }
+.points-val { font-size: 2rem; font-weight: 700; line-height: 1; }
+.points-lbl { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--muted); margin-top: 0.2rem; }
+.points-btns { display: flex; gap: 0.4rem; margin-top: 0.6rem; justify-content: center; }
+.pts-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.7rem; font-family: 'Rajdhani', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.15s; color: var(--text); }
+.pts-btn:hover { transform: scale(1.1); }
+.pts-btn.plus:hover { border-color: var(--accent); color: var(--accent); }
+.pts-btn.minus:hover { border-color: var(--danger); color: var(--danger); }
+
+.pts-log { max-height: 200px; overflow-y: auto; }
+.pts-log-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+.pts-log-item:last-child { border-bottom: none; }
+.pts-delta { font-weight: 700; font-family: 'Share Tech Mono', monospace; }
+.pts-delta.pos { color: var(--accent); }
+.pts-delta.neg { color: var(--danger); }
+
+/* RANK MEDALS */
+.rank-medal { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-weight: 700; font-size: 0.8rem; }
+.rank-medal.r1 { background: linear-gradient(135deg,#ffd700,#ffaa00); color:#000; }
+.rank-medal.r2 { background: linear-gradient(135deg,#c0c0c0,#999); color:#000; }
+.rank-medal.r3 { background: linear-gradient(135deg,#cd7f32,#a05); color:#fff; }
+.rank-medal.r4 { background: var(--bg3); color: var(--muted); }
+
+/* PLAYER COLORS */
+.pc-picker { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.pc-dot { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: all 0.15s; }
+.pc-dot:hover, .pc-dot.active { border-color: #fff; transform: scale(1.15); }
+</style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav class="nav">
+  <div class="nav-logo" onclick="goPage('home');closeBurger()">MoveHaengers</div>
+  <div class="nav-links" id="navLinks">
+    <button class="nav-btn active" onclick="goPage('home');closeBurger()">🏠 Home</button>
+    <button class="nav-btn" onclick="goPage('picker');closeBurger()">🎲 Game Picker</button>
+    <button class="nav-btn" onclick="goPage('tierlist');closeBurger()">🏆 Tierlist</button>
+    <button class="nav-btn" onclick="goPage('challenges');closeBurger()">🎯 Challenges</button>
+    <button class="nav-btn" onclick="goPage('vote');closeBurger()">📊 Abstimmung</button>
+    <button class="nav-btn" onclick="goPage('nightplanner');closeBurger()">🗓️ Game Night</button>
+    <button class="nav-btn" onclick="goPage('points');closeBurger()">⭐ Punkte</button>
+  </div>
+  <button class="burger" id="burgerBtn" onclick="toggleBurger()" aria-label="Menü öffnen">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- ══════════ HOME ══════════ -->
+<div class="page active" id="page-home">
+  <div class="home-hero">
+    <div class="home-logo">MoveHaengers</div>
+    <div class="home-sub">// YOUR SQUAD'S GAMING HUB //</div>
+  </div>
+  <div class="tool-grid">
+    <div class="tool-card c-green" onclick="goPage('picker')">
+      <div class="tool-icon">🎲</div>
+      <div class="tool-name">Game Picker</div>
+      <div class="tool-desc">Kann euch nicht entscheiden? Lass das Glück entscheiden welches Spiel ihr heute zockt.</div>
+    </div>
+    <div class="tool-card c-blue" onclick="goPage('tierlist')">
+      <div class="tool-icon">🏆</div>
+      <div class="tool-name">Tierlist Creator</div>
+      <div class="tool-desc">Erstellt Tierlists für Spiele, Charaktere und alles andere. Mit Drag & Drop.</div>
+    </div>
+    <div class="tool-card c-warn" onclick="goPage('challenges')">
+      <div class="tool-icon">🎯</div>
+      <div class="tool-name">Challenges</div>
+      <div class="tool-desc">Tägliche und wöchentliche Gaming-Challenges für die ganze Gruppe.</div>
+    </div>
+    <div class="tool-card c-purple" onclick="goPage('vote')">
+      <div class="tool-icon">📊</div>
+      <div class="tool-name">Abstimmung</div>
+      <div class="tool-desc">Wer spielt heute? Welches Spiel? Stimmt gemeinsam ab.</div>
+    </div>
+    <div class="tool-card c-red" onclick="goPage('nightplanner')">
+      <div class="tool-icon">🗓️</div>
+      <div class="tool-name">Game Night Planner</div>
+      <div class="tool-desc">Plant eure nächste Game Night – Datum, Spiel und wer dabei ist.</div>
+    </div>
+    <div class="tool-card c-green" onclick="goPage('points')">
+      <div class="tool-icon">⭐</div>
+      <div class="tool-name">Punkte-System</div>
+      <div class="tool-desc">Vergebt Punkte, wer gewinnt bekommt mehr. Rangliste für die ganze Crew.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ GAME PICKER ══════════ -->
+<div class="page" id="page-picker">
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:1.2rem;">
+    <div>
+      <div class="spinner-box">
+        <div class="spin-cat" id="spinCat"></div>
+        <div class="spin-result" id="spinResult">Wähle ein Spiel...</div>
+        <div class="filter-bar" id="spinFilters"></div>
+        <button class="pick-btn" id="pickBtn" onclick="doPick()">🎲 Pick a Game</button>
+        <div class="stats-bar">
+          <div class="stat-pill">Gesamt: <span id="gpTotal">0</span></div>
+          <div class="stat-pill">Aktiv: <span id="gpActive">0</span></div>
+          <div class="stat-pill">Ausgeschl.: <span id="gpExcl">0</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">// Spiele-Liste</div>
+        <div class="game-list" id="gameListEl"></div>
+        <div class="add-row">
+          <input type="text" id="gpNewName" placeholder="Spielname..." onkeydown="if(event.key==='Enter')gpAddGame()">
+          <select id="gpNewCat" style="min-width:120px"></select>
+          <button class="btn primary" onclick="gpAddGame()">+ Hinzufügen</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">// Kategorien</div>
+        <div id="gpCatListEl" style="margin-bottom:0.8rem"></div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.4rem">
+          <input type="text" id="gpNewCatName" placeholder="Neue Kategorie..." style="flex:1" onkeydown="if(event.key==='Enter')gpAddCat()">
+          <input type="color" id="gpNewCatColor" value="#00f5a0" style="width:44px;padding:0.25rem;cursor:pointer;border-radius:6px;">
+        </div>
+        <button class="btn primary" style="width:100%" onclick="gpAddCat()">+ Kategorie</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ TIERLIST ══════════ -->
+<div class="page" id="page-tierlist">
+  <!-- List bar -->
+  <div class="card" style="margin-bottom:1rem;display:flex;align-items:center;gap:0.7rem;flex-wrap:wrap;padding:0.9rem 1.2rem;">
+    <span class="mono" style="font-size:0.72rem;color:var(--muted);letter-spacing:0.15em">LISTE:</span>
+    <select id="tlListSel" onchange="tlSwitchList()" style="min-width:160px;flex:1"></select>
+    <button class="btn primary" onclick="tlNewList()">+ Neu</button>
+    <button class="btn danger" onclick="tlDeleteList()">🗑</button>
+    <span class="mono" style="font-size:0.72rem;color:var(--muted);letter-spacing:0.15em">NAME:</span>
+    <input id="tlTitleInput" placeholder="Name..." style="min-width:160px;flex:1" oninput="tlRenameList()">
+    <button class="btn warn" onclick="tlClear()">🔄 Reset</button>
+    <button class="btn primary" onclick="tlExport()">📸 Export</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 260px;gap:1.2rem;">
+    <div>
+      <div class="card">
+        <div id="tlCapture">
+          <div id="tlRows"></div>
+          <div class="pool-zone">
+            <div class="pool-lbl">// UNRANKED POOL</div>
+            <div class="pool-items" id="tlPool"
+              ondragover="tlDragOver(event,null)"
+              ondragleave="tlDragLeave(event)"
+              ondrop="tlDrop(event,null)">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.8rem;flex-wrap:wrap;">
+          <button class="btn primary" onclick="tlAddTier()">+ Tier</button>
+          <button class="btn" onclick="tlResetColors()">🎨 Reset Farben</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-title">// Eintrag hinzufügen</div>
+        <div id="tlCatChips" style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-bottom:0.7rem;"></div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>NAME</label>
+          <input type="text" id="tlNewItemName" placeholder="z.B. Minecraft..." onkeydown="if(event.key==='Enter')tlAddItem()">
+        </div>
+        <div class="form-group" style="margin-bottom:0.7rem">
+          <label>BILD (optional)</label>
+          <div style="border:2px dashed var(--border);border-radius:8px;padding:0.8rem;text-align:center;cursor:pointer;transition:all 0.2s;font-family:'Share Tech Mono',monospace;font-size:0.72rem;color:var(--muted)" onclick="document.getElementById('tlImgUp').click()" id="tlUploadArea">
+            <img id="tlImgPreview" style="width:50px;height:50px;object-fit:cover;border-radius:6px;margin:0 auto;display:none;"><br>
+            <span id="tlUploadTxt">📁 Bild hochladen</span>
+          </div>
+          <input type="file" id="tlImgUp" accept="image/*" style="display:none" onchange="tlHandleImg(event)">
+        </div>
+        <button class="btn primary" style="width:100%" onclick="tlAddItem()">+ Hinzufügen</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">// Kategorien</div>
+        <div id="tlCatListEl" style="margin-bottom:0.7rem"></div>
+        <input type="text" id="tlNewCatName" placeholder="Neue Kategorie..." style="width:100%;margin-bottom:0.5rem" onkeydown="if(event.key==='Enter')tlAddCat()">
+        <button class="btn primary" style="width:100%" onclick="tlAddCat()">+ Kategorie</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TIER EDIT MODAL -->
+<div class="modal-overlay" id="tierModal">
+  <div class="modal" style="width:320px">
+    <h3>Tier bearbeiten</h3>
+    <div class="form-group" style="margin-bottom:0.8rem">
+      <label>BEZEICHNUNG</label>
+      <input type="text" id="editTierLabel" maxlength="3">
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>FARBE</label>
+      <input type="color" id="editTierColor" style="height:40px;cursor:pointer">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMod('tierModal')">Abbrechen</button>
+      <button class="btn danger" onclick="tlDeleteTier()">Löschen</button>
+      <button class="btn primary" onclick="tlSaveTier()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ CHALLENGES ══════════ -->
+<div class="page" id="page-challenges">
+  <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+    <span class="mono" style="font-size:0.72rem;color:var(--muted);letter-spacing:0.2em">FILTER:</span>
+    <button class="filter-chip active" onclick="chFilter('all',this)">Alle</button>
+    <button class="filter-chip" onclick="chFilter('daily',this)">Daily</button>
+    <button class="filter-chip" onclick="chFilter('weekly',this)">Weekly</button>
+    <div style="flex:1"></div>
+    <button class="btn primary" onclick="openMod('addChModal')">+ Challenge</button>
+    <button class="btn danger" onclick="chResetDone()">Reset Erledigt</button>
+  </div>
+  <div class="challenge-grid" id="chGrid"></div>
+</div>
+
+<!-- Add Challenge Modal -->
+<div class="modal-overlay" id="addChModal">
+  <div class="modal">
+    <h3>Challenge hinzufügen</h3>
+    <div class="form-group" style="margin-bottom:0.7rem">
+      <label>TITEL</label>
+      <input type="text" id="chNewTitle" placeholder="z.B. 5 Wins in einer Session...">
+    </div>
+    <div class="form-group" style="margin-bottom:0.7rem">
+      <label>BESCHREIBUNG</label>
+      <textarea id="chNewDesc" rows="2" placeholder="Details..." style="width:100%;resize:vertical"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>TYP</label>
+      <select id="chNewType">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMod('addChModal')">Abbrechen</button>
+      <button class="btn primary" onclick="chAdd()">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ ABSTIMMUNG ══════════ -->
+<div class="page" id="page-vote">
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:1.2rem;">
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
+          <div class="card-title" style="margin:0;border:none;padding:0">// Aktuelle Abstimmung</div>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="btn warn" onclick="voteReset()">🔄 Reset</button>
+          </div>
+        </div>
+        <input type="text" id="voteTopic" placeholder="Frage: z.B. Welches Spiel heute?" style="width:100%;margin-bottom:0.8rem" oninput="voteRenderTopic()">
+        <div id="voteTopicDisplay" style="font-size:1.1rem;font-weight:700;margin-bottom:0.8rem;min-height:1.5rem;color:var(--accent)"></div>
+        <div id="voteOptions"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title">// Optionen hinzufügen</div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>NAME</label>
+          <input type="text" id="voteNewOpt" placeholder="z.B. Minecraft..." onkeydown="if(event.key==='Enter')voteAddOpt()">
+        </div>
+        <button class="btn primary" style="width:100%" onclick="voteAddOpt()">+ Option</button>
+
+        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+          <div class="card-title" style="margin-bottom:0.5rem">// Quick-Add aus Spielen</div>
+          <div id="voteQuickAdd" style="display:flex;flex-direction:column;gap:0.35rem;max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ GAME NIGHT PLANNER ══════════ -->
+<div class="page" id="page-nightplanner">
+  <div style="display:grid;grid-template-columns:1fr 300px;gap:1.2rem;">
+    <div>
+      <div class="card">
+        <div class="card-title">// Geplante Game Nights</div>
+        <div id="nightList"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">// Neue Game Night</div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>DATUM</label>
+          <input type="date" id="nightDate">
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>UHRZEIT</label>
+          <input type="time" id="nightTime" value="20:00">
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>SPIEL</label>
+          <select id="nightGame" style="width:100%"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>SPIELER (Komma getrennt)</label>
+          <input type="text" id="nightPlayers" placeholder="z.B. Tim, Lena, Marco...">
+        </div>
+        <div class="form-group" style="margin-bottom:0.8rem">
+          <label>NOTIZ</label>
+          <textarea id="nightNote" rows="2" placeholder="Optional..." style="width:100%;resize:vertical"></textarea>
+        </div>
+        <button class="btn primary" style="width:100%" onclick="nightAdd()">🗓️ Planen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ PUNKTE SYSTEM ══════════ -->
+<div class="page" id="page-points">
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:1.2rem;">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem;flex-wrap:wrap;gap:0.5rem;">
+        <span class="mono" style="font-size:0.72rem;color:var(--accent);letter-spacing:0.2em">// RANGLISTE</span>
+        <button class="btn danger" onclick="ptsResetAll()">🔄 Alles reset</button>
+      </div>
+      <div class="points-grid" id="ptsGrid"></div>
+
+      <div class="card" style="margin-top:1rem">
+        <div class="card-title">// Punkte-Log</div>
+        <div class="pts-log" id="ptsLog"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-title">// Spieler hinzufügen</div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>NAME</label>
+          <input type="text" id="ptsNewName" placeholder="Name..." onkeydown="if(event.key==='Enter')ptsAddPlayer()">
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>EMOJI</label>
+          <input type="text" id="ptsNewEmoji" placeholder="🎮" maxlength="2" style="width:60px">
+        </div>
+        <div class="form-group" style="margin-bottom:0.8rem">
+          <label>FARBE</label>
+          <div class="pc-picker" id="ptsCPicker"></div>
+        </div>
+        <button class="btn primary" style="width:100%" onclick="ptsAddPlayer()">+ Spieler</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">// Punkte vergeben</div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>SPIELER</label>
+          <select id="ptsSelPlayer" style="width:100%"></select>
+        </div>
+        <div class="form-group" style="margin-bottom:0.6rem">
+          <label>PUNKTE</label>
+          <input type="number" id="ptsDelta" value="1" min="1" style="width:80px">
+        </div>
+        <div class="form-group" style="margin-bottom:0.8rem">
+          <label>GRUND</label>
+          <input type="text" id="ptsReason" placeholder="z.B. Win in Valorant">
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn primary" style="flex:1" onclick="ptsGive(1)">+ Hinzufügen</button>
+          <button class="btn danger" style="flex:1" onclick="ptsGive(-1)">− Abziehen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════ -->
+<script>
+// ── HELPERS ─────────────────────────────────────────────────────────────
+let _id = Date.now();
+const uid = () => ++_id;
+
+function openMod(id) { document.getElementById(id).classList.add('open'); }
+function closeMod(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
+});
+
+function goPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  const pages = ['home','picker','tierlist','challenges','vote','nightplanner','points'];
+  const idx = pages.indexOf(id);
+  document.querySelectorAll('.nav-btn')[idx]?.classList.add('active');
+  if (id === 'picker') gpRender();
+  if (id === 'tierlist') tlRender();
+  if (id === 'challenges') chRender();
+  if (id === 'vote') voteRender();
+  if (id === 'nightplanner') nightRender();
+  if (id === 'points') ptsRender();
+}
+
+// ── BURGER MENU ──────────────────────────────────────────────────────────
+function toggleBurger() {
+  const btn = document.getElementById("burgerBtn");
+  const links = document.getElementById("navLinks");
+  btn.classList.toggle("open");
+  links.classList.toggle("open");
+  document.body.style.overflow = links.classList.contains("open") ? "hidden" : "";
+}
+
+function closeBurger() {
+  const btn = document.getElementById("burgerBtn");
+  const links = document.getElementById("navLinks");
+  btn.classList.remove("open");
+  links.classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+document.addEventListener("click", function(e) {
+  const nav = document.querySelector(".nav");
+  if (!nav.contains(e.target)) closeBurger();
+});
+
+// Scroll to top on page change
+const _origGoPage = goPage;
+function goPage(id) { _origGoPage(id); window.scrollTo(0,0); }
+
+function save() {
+  if (window.fbSave) window.fbSave(S);
+  try { localStorage.setItem('movehaengers_backup', JSON.stringify(S)); } catch(e){}
+}
+function load() {
+  try {
+    const d = localStorage.getItem('movehaengers_backup');
+    if (d) { Object.assign(S, JSON.parse(d)); }
+  } catch(e){}
+}
+
+// ── SHARED STATE ─────────────────────────────────────────────────────────
+const PCOLORS = ['#00f5a0','#00d4ff','#ff4466','#ffaa00','#aa66ff','#ff8c00','#44ffcc','#ff6688'];
+
+const S = {
+  // GAME PICKER
+  gp: {
+    categories: [
+      { id: 1, name: 'Multiplayer', color: '#00d4ff' },
+      { id: 2, name: 'Solo', color: '#aa66ff' },
+      { id: 3, name: 'Party', color: '#ffaa00' },
+    ],
+    games: [
+      { id: 1, name: 'Outlast Trials', catId: 1, excluded: false },
+      { id: 2, name: 'Minecraft', catId: 1, excluded: false },
+      { id: 3, name: 'Golf with your Friends', catId: 3, excluded: false },
+      { id: 4, name: 'Roblox', catId: 3, excluded: false },
+      { id: 5, name: 'Genshin Impact', catId: 2, excluded: false },
+      { id: 6, name: 'MakeItMeme', catId: 3, excluded: false },
+      { id: 7, name: 'GarticPhone', catId: 3, excluded: false },
+      { id: 8, name: 'PEAK', catId: 1, excluded: false },
+      { id: 9, name: 'RV There Yet?!', catId: 3, excluded: false },
+    ],
+    filterCatId: null,
+  },
+  // TIERLIST
+  tl: {
+    lists: [],
+    activeId: null,
+    categories: ['Spiele','Charaktere','Sonstiges'],
+    activeCat: null,
+  },
+  // CHALLENGES
+  ch: { items: [], filter: 'all' },
+  // VOTE
+  vote: { topic: '', options: [] },
+  // NIGHT PLANNER
+  night: { events: [] },
+  // POINTS
+  pts: { players: [], log: [] },
+};
+
+// ════════════════════════════════════════════
+// GAME PICKER
+// ════════════════════════════════════════════
+function gpGetCat(id) { return S.gp.categories.find(c => c.id === id); }
+function gpActive() { return S.gp.games.filter(g => !g.excluded && (!S.gp.filterCatId || g.catId === S.gp.filterCatId)); }
+
+function gpRender() {
+  gpRenderFilters();
+  gpRenderList();
+  gpRenderCats();
+  gpRenderStats();
+}
+
+function gpRenderFilters() {
+  const bar = document.getElementById('spinFilters');
+  bar.innerHTML = `<button class="filter-chip ${!S.gp.filterCatId?'active':''}" onclick="gpSetFilter(null)">Alle</button>` +
+    S.gp.categories.map(c => `<button class="filter-chip ${S.gp.filterCatId===c.id?'active':''}" onclick="gpSetFilter(${c.id})">${c.name}</button>`).join('');
+  const sel = document.getElementById('gpNewCat');
+  sel.innerHTML = S.gp.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+function gpRenderList() {
+  const el = document.getElementById('gameListEl');
+  if (!S.gp.games.length) { el.innerHTML = '<div class="empty-state">Keine Spiele vorhanden</div>'; return; }
+  el.innerHTML = S.gp.games.map(g => {
+    const cat = gpGetCat(g.catId);
+    return `<div class="game-item ${g.excluded?'excluded':''}">
+      <div class="gi-dot" style="background:${cat?cat.color:'#888'}"></div>
+      <div class="gi-name">${g.name}</div>
+      <div class="gi-cat">${cat?cat.name:'?'}</div>
+      <div class="gi-actions">
+        <button class="icon-btn ${g.excluded?'excl-on':''}" onclick="gpToggleExcl(${g.id})" title="${g.excluded?'Einschließen':'Ausschließen'}">${g.excluded?'✓':'⊘'}</button>
+        <button class="icon-btn del" onclick="gpDelGame(${g.id})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function gpRenderCats() {
+  const el = document.getElementById('gpCatListEl');
+  el.innerHTML = S.gp.categories.map(c => `
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:0.45rem 0.7rem">
+      <div style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></div>
+      <div style="flex:1;font-weight:600;font-size:0.92rem">${c.name}</div>
+      <button class="icon-btn del" onclick="gpDelCat(${c.id})">✕</button>
+    </div>`).join('');
+}
+
+function gpRenderStats() {
+  const active = gpActive();
+  document.getElementById('gpTotal').textContent = S.gp.games.length;
+  document.getElementById('gpActive').textContent = active.length;
+  document.getElementById('gpExcl').textContent = S.gp.games.filter(g=>g.excluded).length;
+}
+
+function gpSetFilter(id) { S.gp.filterCatId = id; save(); gpRender(); }
+
+function gpAddGame() {
+  const name = document.getElementById('gpNewName').value.trim();
+  const catId = parseInt(document.getElementById('gpNewCat').value);
+  if (!name) return;
+  S.gp.games.push({ id: uid(), name, catId, excluded: false });
+  document.getElementById('gpNewName').value = '';
+  save(); gpRender();
+  // also update night planner game list
+  nightRenderGameSelect();
+}
+
+function gpDelGame(id) { S.gp.games = S.gp.games.filter(g=>g.id!==id); save(); gpRender(); }
+function gpToggleExcl(id) { const g=S.gp.games.find(g=>g.id===id); if(g) g.excluded=!g.excluded; save(); gpRender(); }
+
+function gpAddCat() {
+  const name = document.getElementById('gpNewCatName').value.trim();
+  const color = document.getElementById('gpNewCatColor').value;
+  if (!name) return;
+  S.gp.categories.push({ id: uid(), name, color });
+  document.getElementById('gpNewCatName').value = '';
+  save(); gpRender();
+}
+
+function gpDelCat(id) {
+  S.gp.categories = S.gp.categories.filter(c=>c.id!==id);
+  S.gp.games.forEach(g=>{ if(g.catId===id) g.catId=null; });
+  save(); gpRender();
+}
+
+let gpSpinning = false;
+function doPick() {
+  const pool = gpActive();
+  if (!pool.length) { document.getElementById('spinResult').textContent = 'Keine Spiele aktiv!'; return; }
+  gpSpinning = true;
+  document.getElementById('pickBtn').disabled = true;
+  const res = document.getElementById('spinResult');
+  const cat = document.getElementById('spinCat');
+  res.className = 'spin-result spinning';
+  cat.textContent = '';
+  let ticks = 0, max = 18 + Math.floor(Math.random()*14);
+  const iv = setInterval(() => {
+    res.textContent = pool[Math.floor(Math.random()*pool.length)].name;
+    ticks++;
+    if (ticks >= max) {
+      clearInterval(iv);
+      const chosen = pool[Math.floor(Math.random()*pool.length)];
+      res.className = 'spin-result revealed';
+      res.textContent = '🎮 ' + chosen.name;
+      const c = gpGetCat(chosen.catId);
+      if (c) cat.textContent = '[ '+c.name.toUpperCase()+' ]';
+      document.getElementById('pickBtn').disabled = false;
+      gpSpinning = false;
+    }
+  }, 80);
+}
+
+// ════════════════════════════════════════════
+// TIERLIST
+// ════════════════════════════════════════════
+function tlDefaultTiers() {
+  const defs = [['S','#ff4466'],['A','#ff8c00'],['B','#ffdd00'],['C','#44ff88'],['D','#00aaff'],['F','#aa66ff']];
+  return defs.map(([label,color]) => ({ id: uid(), label, color }));
+}
+
+function tlActiveList() { return S.tl.lists.find(l=>l.id===S.tl.activeId); }
+
+function tlInitDefault() {
+  const l = { id: uid(), name: 'Meine Tierlist', tiers: tlDefaultTiers(), items: [] };
+  S.tl.lists = [l];
+  S.tl.activeId = l.id;
+}
+
+let tlDragItemId = null, editTierId = null, tlPendingImg = null;
+
+function tlRender() {
+  if (!S.tl.lists.length) tlInitDefault();
+  tlRenderListSel();
+  tlRenderRows();
+  tlRenderPool();
+  tlRenderCatChips();
+  tlRenderCatList();
+}
+
+function tlRenderListSel() {
+  const sel = document.getElementById('tlListSel');
+  sel.innerHTML = S.tl.lists.map(l=>`<option value="${l.id}" ${l.id===S.tl.activeId?'selected':''}>${l.name}</option>`).join('');
+  document.getElementById('tlTitleInput').value = tlActiveList()?.name || '';
+}
+
+function tlRenderRows() {
+  const list = tlActiveList();
+  const el = document.getElementById('tlRows');
+  el.innerHTML = list.tiers.map(tier => {
+    const items = list.items.filter(i=>i.tierId===tier.id);
+    return `<div class="tier-row">
+      <div class="tier-label" style="background:${tier.color};color:#000" onclick="tlOpenTierMod(${tier.id})">${tier.label}</div>
+      <div class="tier-items" data-tier="${tier.id}"
+        ondragover="tlDragOver(event,${tier.id})"
+        ondragleave="tlDragLeave(event)"
+        ondrop="tlDrop(event,${tier.id})">
+        ${items.map(tlItemHtml).join('')}
+      </div>
+      <div class="tier-actions">
+        <button class="t-mini-btn" onclick="tlMoveTier(${tier.id},-1)">▲</button>
+        <button class="t-mini-btn" onclick="tlMoveTier(${tier.id},1)">▼</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function tlRenderPool() {
+  const list = tlActiveList();
+  const pool = list.items.filter(i=>!i.tierId);
+  document.getElementById('tlPool').innerHTML = pool.map(tlItemHtml).join('');
+}
+
+function tlItemHtml(item) {
+  return `<div class="item-card" draggable="true"
+    ondragstart="tlDragStart(event,${item.id})"
+    ondragend="tlDragEnd(event)"
+    title="${item.name}">
+    ${item.img ? `<img src="${item.img}" alt="${item.name}">` : `<div class="ic-text">${item.name}</div>`}
+    <button class="ic-del" onclick="tlDelItem(${item.id})">✕</button>
+  </div>`;
+}
+
+function tlRenderCatChips() {
+  const el = document.getElementById('tlCatChips');
+  el.innerHTML = S.tl.categories.map(c=>
+    `<div class="filter-chip ${S.tl.activeCat===c?'active':''}" onclick="tlSetCat('${c}')">${c}</div>`
+  ).join('');
+}
+
+function tlRenderCatList() {
+  const el = document.getElementById('tlCatListEl');
+  el.innerHTML = S.tl.categories.map(c=>
+    `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem">
+      <div style="flex:1;font-weight:600;font-size:0.9rem">${c}</div>
+      <button class="icon-btn del" onclick="tlDelCat('${c}')">✕</button>
+    </div>`
+  ).join('');
+}
+
+function tlSetCat(c) { S.tl.activeCat = S.tl.activeCat===c ? null : c; tlRenderCatChips(); }
+
+function tlSwitchList() { S.tl.activeId = parseInt(document.getElementById('tlListSel').value); save(); tlRender(); }
+function tlNewList() { const n=prompt('Name:','Neue Tierlist'); if(!n) return; const l={id:uid(),name:n,tiers:tlDefaultTiers(),items:[]}; S.tl.lists.push(l); S.tl.activeId=l.id; save(); tlRender(); }
+function tlDeleteList() { if(S.tl.lists.length<=1){alert('Mindestens eine Liste!');return;} if(!confirm('Löschen?'))return; S.tl.lists=S.tl.lists.filter(l=>l.id!==S.tl.activeId); S.tl.activeId=S.tl.lists[0].id; save(); tlRender(); }
+function tlRenameList() { const l=tlActiveList(); if(l) l.name=document.getElementById('tlTitleInput').value; save(); document.querySelector(`#tlListSel option[value="${l.id}"]`).textContent=l.name; }
+function tlClear() { if(!confirm('Alle Einträge zurück in Pool?'))return; tlActiveList().items.forEach(i=>i.tierId=null); save(); tlRender(); }
+
+function tlAddTier() { tlActiveList().tiers.push({id:uid(),label:'?',color:'#888888'}); save(); tlRender(); }
+function tlResetColors() {
+  const defs = [['S','#ff4466'],['A','#ff8c00'],['B','#ffdd00'],['C','#44ff88'],['D','#00aaff'],['F','#aa66ff']];
+  tlActiveList().tiers.forEach((t,i)=>{ if(i<defs.length) t.color=defs[i][1]; }); save(); tlRender();
+}
+
+function tlOpenTierMod(id) {
+  const t=tlActiveList().tiers.find(t=>t.id===id);
+  if(!t) return;
+  editTierId=id;
+  document.getElementById('editTierLabel').value=t.label;
+  document.getElementById('editTierColor').value=t.color;
+  openMod('tierModal');
+}
+
+function tlSaveTier() {
+  const t=tlActiveList().tiers.find(t=>t.id===editTierId);
+  if(t){ t.label=document.getElementById('editTierLabel').value||'?'; t.color=document.getElementById('editTierColor').value; }
+  closeMod('tierModal'); save(); tlRender();
+}
+
+function tlDeleteTier() {
+  const list=tlActiveList();
+  list.items.forEach(i=>{ if(i.tierId===editTierId) i.tierId=null; });
+  list.tiers=list.tiers.filter(t=>t.id!==editTierId);
+  closeMod('tierModal'); save(); tlRender();
+}
+
+function tlMoveTier(id, dir) {
+  const t=tlActiveList().tiers;
+  const i=t.findIndex(x=>x.id===id);
+  const j=i+dir;
+  if(j>=0&&j<t.length) [t[i],t[j]]=[t[j],t[i]];
+  save(); tlRender();
+}
+
+function tlHandleImg(e) {
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    tlPendingImg=ev.target.result;
+    const p=document.getElementById('tlImgPreview');
+    p.src=tlPendingImg; p.style.display='block';
+    document.getElementById('tlUploadTxt').textContent='✅ Bild geladen';
+  };
+  r.readAsDataURL(f);
+}
+
+function tlAddItem() {
+  const name=document.getElementById('tlNewItemName').value.trim();
+  if(!name&&!tlPendingImg) return;
+  tlActiveList().items.push({id:uid(),name:name||'',img:tlPendingImg||null,tierId:null,category:S.tl.activeCat});
+  document.getElementById('tlNewItemName').value='';
+  tlPendingImg=null;
+  document.getElementById('tlImgPreview').style.display='none';
+  document.getElementById('tlUploadTxt').textContent='📁 Bild hochladen';
+  document.getElementById('tlImgUp').value='';
+  save(); tlRender();
+}
+
+function tlDelItem(id) { tlActiveList().items=tlActiveList().items.filter(i=>i.id!==id); save(); tlRender(); }
+
+function tlAddCat() {
+  const n=document.getElementById('tlNewCatName').value.trim();
+  if(!n||S.tl.categories.includes(n)) return;
+  S.tl.categories.push(n);
+  document.getElementById('tlNewCatName').value='';
+  save(); tlRenderCatChips(); tlRenderCatList();
+}
+
+function tlDelCat(n) { S.tl.categories=S.tl.categories.filter(c=>c!==n); if(S.tl.activeCat===n) S.tl.activeCat=null; save(); tlRender(); }
+
+function tlDragStart(e,id) { tlDragItemId=id; setTimeout(()=>e.target.classList.add('dragging'),0); }
+function tlDragEnd(e) { e.target.classList.remove('dragging'); }
+function tlDragOver(e,tierId) {
+  e.preventDefault();
+  const el=tierId!==null?document.querySelector(`.tier-items[data-tier="${tierId}"]`):document.getElementById('tlPool');
+  if(el) el.classList.add('drag-over');
+}
+function tlDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function tlDrop(e,tierId) {
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+  if(tlDragItemId===null) return;
+  const item=tlActiveList().items.find(i=>i.id===tlDragItemId);
+  if(item) item.tierId=tierId;
+  tlDragItemId=null; save(); tlRender();
+}
+
+function tlExport() {
+  html2canvas(document.getElementById('tlCapture'),{backgroundColor:'#0e1117',scale:2,useCORS:true}).then(canvas=>{
+    const a=document.createElement('a');
+    a.download=(tlActiveList().name||'tierlist')+'.png';
+    a.href=canvas.toDataURL('image/png');
+    a.click();
+  });
+}
+
+// ════════════════════════════════════════════
+// CHALLENGES
+// ════════════════════════════════════════════
+const DEFAULT_CHALLENGES = [
+  {id:1,title:'5 Wins in einer Session',desc:'Gewinnt 5 Runden hintereinander in irgendeinem Spiel.',type:'daily',done:false},
+  {id:2,title:'Neues Spiel ausprobieren',desc:'Zockt ein Spiel das ihr diese Woche noch nicht gespielt habt.',type:'daily',done:false},
+  {id:3,title:'Game Night veranstalten',desc:'Plant und haltet eine offizielle Game Night diese Woche.',type:'weekly',done:false},
+  {id:4,title:'Tierlist erstellen',desc:'Erstellt zusammen eine Tierlist für eure Lieblingsspiele.',type:'weekly',done:false},
+  {id:5,title:'Ohne Sterben gewinnen',desc:'Gewinnt eine Runde ohne zu sterben.',type:'daily',done:false},
+  {id:6,title:'Ranglisten-Aufstieg',desc:'Steigt diese Woche in einem ranked Spiel mindestens eine Stufe auf.',type:'weekly',done:false},
+];
+
+function chFilter(f, btn) {
+  S.ch.filter = f;
+  document.querySelectorAll('#page-challenges .filter-chip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  chRender();
+}
+
+function chRender() {
+  if (!S.ch.items.length) S.ch.items = DEFAULT_CHALLENGES.map(c=>({...c}));
+  const items = S.ch.items.filter(c => S.ch.filter==='all' || c.type===S.ch.filter);
+  const el = document.getElementById('chGrid');
+  if (!items.length) { el.innerHTML='<div class="empty-state">Keine Challenges gefunden</div>'; return; }
+  el.innerHTML = items.map(c => `
+    <div class="challenge-card ${c.done?'done':''}">
+      <div class="ch-badge ${c.type}">${c.type==='daily'?'DAILY':'WEEKLY'}</div>
+      <div class="ch-title">${c.done?'✅ ':''}${c.title}</div>
+      <div class="ch-desc">${c.desc}</div>
+      <div class="ch-actions">
+        <button class="ch-done-btn" onclick="chToggle(${c.id})">${c.done?'Rückgängig':'Erledigt ✓'}</button>
+        <button class="icon-btn del" onclick="chDel(${c.id})" style="margin-left:auto">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function chToggle(id) { const c=S.ch.items.find(c=>c.id===id); if(c) c.done=!c.done; save(); chRender(); }
+function chDel(id) { S.ch.items=S.ch.items.filter(c=>c.id!==id); save(); chRender(); }
+function chResetDone() { S.ch.items.forEach(c=>c.done=false); save(); chRender(); }
+
+function chAdd() {
+  const title=document.getElementById('chNewTitle').value.trim();
+  const desc=document.getElementById('chNewDesc').value.trim();
+  const type=document.getElementById('chNewType').value;
+  if(!title) return;
+  S.ch.items.push({id:uid(),title,desc,type,done:false});
+  document.getElementById('chNewTitle').value='';
+  document.getElementById('chNewDesc').value='';
+  closeMod('addChModal'); save(); chRender();
+}
+
+// ════════════════════════════════════════════
+// ABSTIMMUNG
+// ════════════════════════════════════════════
+function voteRender() {
+  document.getElementById('voteTopic').value = S.vote.topic;
+  voteRenderTopic();
+  voteRenderOptions();
+  voteRenderQuickAdd();
+}
+
+function voteRenderTopic() {
+  S.vote.topic = document.getElementById('voteTopic').value;
+  document.getElementById('voteTopicDisplay').textContent = S.vote.topic;
+  save();
+}
+
+function voteRenderOptions() {
+  const el = document.getElementById('voteOptions');
+  const total = S.vote.options.reduce((a,o)=>a+o.votes,0);
+  el.innerHTML = S.vote.options.map(o => {
+    const pct = total>0 ? Math.round(o.votes/total*100) : 0;
+    return `<div class="vote-option ${o.myVote?'voted':''}" onclick="voteCast(${o.id})">
+      <div class="vote-bar" style="width:${pct}%"></div>
+      <div class="vote-content">
+        <div class="vote-label">${o.name}</div>
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div class="vote-count">${o.votes} Stimme${o.votes!==1?'n':''} · ${pct}%</div>
+          <button class="icon-btn del" onclick="event.stopPropagation();voteDel(${o.id})">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty-state">Noch keine Optionen</div>';
+}
+
+function voteRenderQuickAdd() {
+  const el = document.getElementById('voteQuickAdd');
+  el.innerHTML = S.gp.games.slice(0,8).map(g =>
+    `<button class="btn" style="text-align:left;font-size:0.82rem;padding:0.35rem 0.7rem" onclick="voteQuickAdd('${g.name}')">${g.name}</button>`
+  ).join('');
+}
+
+function voteCast(id) {
+  const opt = S.vote.options.find(o=>o.id===id);
+  if (!opt) return;
+  if (opt.myVote) { opt.votes--; opt.myVote=false; }
+  else {
+    S.vote.options.forEach(o=>{ if(o.myVote){o.votes--;o.myVote=false;} });
+    opt.votes++; opt.myVote=true;
+  }
+  save(); voteRenderOptions();
+}
+
+function voteAddOpt() {
+  const name=document.getElementById('voteNewOpt').value.trim();
+  if(!name) return;
+  S.vote.options.push({id:uid(),name,votes:0,myVote:false});
+  document.getElementById('voteNewOpt').value='';
+  save(); voteRenderOptions();
+}
+
+function voteQuickAdd(name) {
+  if(S.vote.options.find(o=>o.name===name)) return;
+  S.vote.options.push({id:uid(),name,votes:0,myVote:false});
+  save(); voteRenderOptions();
+}
+
+function voteDel(id) { S.vote.options=S.vote.options.filter(o=>o.id!==id); save(); voteRenderOptions(); }
+function voteReset() { if(!confirm('Abstimmung zurücksetzen?'))return; S.vote.options.forEach(o=>{o.votes=0;o.myVote=false;}); save(); voteRenderOptions(); }
+
+// ════════════════════════════════════════════
+// GAME NIGHT PLANNER
+// ════════════════════════════════════════════
+function nightRender() {
+  nightRenderGameSelect();
+  nightRenderList();
+}
+
+function nightRenderGameSelect() {
+  const sel = document.getElementById('nightGame');
+  sel.innerHTML = S.gp.games.map(g=>`<option value="${g.name}">${g.name}</option>`).join('');
+}
+
+function nightRenderList() {
+  const el = document.getElementById('nightList');
+  if (!S.night.events.length) { el.innerHTML='<div class="empty-state">// Noch keine Game Nights geplant //</div>'; return; }
+  const sorted = [...S.night.events].sort((a,b)=>new Date(a.date+' '+a.time)-new Date(b.date+' '+b.time));
+  el.innerHTML = sorted.map(e => {
+    const players = e.players.split(',').map(p=>p.trim()).filter(Boolean);
+    const dateStr = e.date ? new Date(e.date+'T12:00:00').toLocaleDateString('de-CH',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) : '?';
+    return `<div class="night-card">
+      <div style="display:flex;align-items:start;justify-content:space-between">
+        <div>
+          <div class="night-date">📅 ${dateStr} · ${e.time||'?'} Uhr</div>
+          <div class="night-game">🎮 ${e.game}</div>
+          ${e.note?`<div style="font-size:0.82rem;color:var(--muted);margin-top:0.2rem">${e.note}</div>`:''}
+        </div>
+        <button class="icon-btn del" onclick="nightDel(${e.id})" style="margin-top:0.2rem">✕</button>
+      </div>
+      <div class="night-players">
+        ${players.map(p=>`<div class="night-player-tag">👤 ${p}</div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function nightAdd() {
+  const date=document.getElementById('nightDate').value;
+  const time=document.getElementById('nightTime').value;
+  const game=document.getElementById('nightGame').value;
+  const players=document.getElementById('nightPlayers').value;
+  const note=document.getElementById('nightNote').value.trim();
+  if(!date||!game) { alert('Datum und Spiel sind Pflichtfelder!'); return; }
+  S.night.events.push({id:uid(),date,time,game,players,note});
+  document.getElementById('nightDate').value='';
+  document.getElementById('nightPlayers').value='';
+  document.getElementById('nightNote').value='';
+  save(); nightRenderList();
+}
+
+function nightDel(id) { S.night.events=S.night.events.filter(e=>e.id!==id); save(); nightRenderList(); }
+
+// ════════════════════════════════════════════
+// PUNKTE SYSTEM
+// ════════════════════════════════════════════
+let ptsSelColor = PCOLORS[0];
+
+function ptsRender() {
+  ptsCPickerRender();
+  ptsRenderGrid();
+  ptsRenderLog();
+  ptsRenderSelect();
+}
+
+function ptsCPickerRender() {
+  document.getElementById('ptsCPicker').innerHTML = PCOLORS.map(c=>
+    `<div class="pc-dot ${c===ptsSelColor?'active':''}" style="background:${c}" onclick="ptsPick('${c}')"></div>`
+  ).join('');
+}
+
+function ptsPick(c) { ptsSelColor=c; ptsCPickerRender(); }
+
+function ptsAddPlayer() {
+  const name=document.getElementById('ptsNewName').value.trim();
+  if(!name) return;
+  const emoji=document.getElementById('ptsNewEmoji').value.trim()||'🎮';
+  S.pts.players.push({id:uid(),name,emoji,color:ptsSelColor,points:0});
+  document.getElementById('ptsNewName').value='';
+  document.getElementById('ptsNewEmoji').value='';
+  save(); ptsRender();
+}
+
+function ptsDelPlayer(id) {
+  if(!confirm('Spieler löschen?')) return;
+  S.pts.players=S.pts.players.filter(p=>p.id!==id);
+  S.pts.log=S.pts.log.filter(l=>l.playerId!==id);
+  save(); ptsRender();
+}
+
+function ptsGive(sign) {
+  const playerId=parseInt(document.getElementById('ptsSelPlayer').value);
+  const delta=parseInt(document.getElementById('ptsDelta').value)||1;
+  const reason=document.getElementById('ptsReason').value.trim()||'—';
+  const p=S.pts.players.find(p=>p.id===playerId);
+  if(!p) return;
+  const actual=delta*sign;
+  p.points+=actual;
+  S.pts.log.unshift({id:uid(),playerId,name:p.name,delta:actual,reason,emoji:p.emoji,color:p.color,date:new Date().toLocaleString('de-CH')});
+  if(S.pts.log.length>50) S.pts.log.pop();
+  document.getElementById('ptsReason').value='';
+  save(); ptsRender();
+}
+
+function ptsResetAll() { if(!confirm('Alle Punkte auf 0 setzen?'))return; S.pts.players.forEach(p=>p.points=0); S.pts.log=[]; save(); ptsRender(); }
+
+function ptsRenderGrid() {
+  const el=document.getElementById('ptsGrid');
+  if(!S.pts.players.length){el.innerHTML='<div class="empty-state" style="grid-column:1/-1">// Noch keine Spieler //</div>';return;}
+  const sorted=[...S.pts.players].sort((a,b)=>b.points-a.points);
+  el.innerHTML=sorted.map((p,i)=>{
+    const mc=['r1','r2','r3','r4'][Math.min(i,3)];
+    return `<div class="points-card">
+      <button class="icon-btn del" style="position:absolute;top:6px;right:6px" onclick="ptsDelPlayer(${p.id})">✕</button>
+      <div class="points-avatar" style="background:${p.color}20;border:2px solid ${p.color};color:${p.color}">${p.emoji}</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:0.4rem;margin-bottom:0.3rem">
+        <span class="rank-medal ${mc}">${i+1}</span>
+        <div class="points-name">${p.name}</div>
+      </div>
+      <div class="points-val" style="color:${p.color}">${p.points}</div>
+      <div class="points-lbl">PUNKTE</div>
+      <div class="points-btns">
+        <button class="pts-btn plus" onclick="ptsQuick(${p.id},1)">+1</button>
+        <button class="pts-btn plus" onclick="ptsQuick(${p.id},5)">+5</button>
+        <button class="pts-btn minus" onclick="ptsQuick(${p.id},-1)">-1</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function ptsQuick(playerId, delta) {
+  const p=S.pts.players.find(p=>p.id===playerId); if(!p) return;
+  p.points+=delta;
+  S.pts.log.unshift({id:uid(),playerId,name:p.name,delta,reason:'Quick',emoji:p.emoji,color:p.color,date:new Date().toLocaleString('de-CH')});
+  if(S.pts.log.length>50) S.pts.log.pop();
+  save(); ptsRender();
+}
+
+function ptsRenderLog() {
+  const el=document.getElementById('ptsLog');
+  if(!S.pts.log.length){el.innerHTML='<div class="empty-state" style="padding:1rem">Noch keine Einträge</div>';return;}
+  el.innerHTML=S.pts.log.map(l=>`
+    <div class="pts-log-item">
+      <span style="color:${l.color}">${l.emoji}</span>
+      <span style="flex:1">${l.name}</span>
+      <span class="pts-delta ${l.delta>0?'pos':'neg'}">${l.delta>0?'+':''}${l.delta}</span>
+      <span style="color:var(--muted);font-size:0.75rem;font-family:'Share Tech Mono',monospace">${l.reason}</span>
+    </div>`).join('');
+}
+
+function ptsRenderSelect() {
+  const sel=document.getElementById('ptsSelPlayer');
+  sel.innerHTML=S.pts.players.map(p=>`<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');
+}
+
+// ════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════
+// Expose to window for Supabase realtime listener
+window.S = S;
+window.gpRender = gpRender;
+window.tlRender = tlRender;
+window.chRender = chRender;
+window.voteRender = voteRender;
+window.nightRender = nightRender;
+window.ptsRender = ptsRender;
+
+load();
+// ensure defaults
+if (!S.ch.items || !S.ch.items.length) S.ch.items = [];
+if (!S.tl.lists || !S.tl.lists.length) tlInitDefault();
+
+// render home by default (already active)
+// pre-fill night game select
+nightRenderGameSelect();
+</script>
+</body>
+</html>
